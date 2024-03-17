@@ -1,0 +1,308 @@
+
+BLACK_COLOR_OFFSET = 25
+MOTOR_SPEED = 30
+SENSOR_LINE_DEGRES_MOVEMENT=120
+MOVEMENT_MOTORS="DB"
+FORKLIFT_MOTOR="C"
+SENSOR_MODE_LIGHT = 0
+SENSOR_MODE_COLORS = 2
+BLOCK_SUM = 2+3+4+5
+True="True"
+False="False"
+
+LCD.Clear()
+
+Function BytesToDecimal(in number[] array,out number decimal)
+  decimal = 0
+  For i=0 To 15
+    decimal+=Math.Power(2,i)*array[i]
+  EndFor
+EndFunction
+
+Function TryGetNumber(in number[] input,out number code)
+  CODES[4785] = 123
+  CODES[19843] = 213
+  CODES[19837] = 214
+  CODES[31439] = 234
+  CODES[54189] = 341
+  CODES[56231] = 342
+  CODES[3064] = 412
+  CODES[985] = 413
+  
+  BytesToDecimal(input,result)
+  If(CODES[result]<>0) Then
+    code = CODES[result]
+  EndIf
+  
+  If (code=0) Then
+    For y = 0 To 3
+      For x = 0 To 3
+        temp[x+y*4] = input[x * 4 + (3-y)]
+      EndFor
+    EndFor
+    BytesToDecimal(temp,result)
+    If(CODES[result]<>0) Then
+      code = CODES[result]
+    EndIf
+  EndIf
+  
+  #right
+  If(code=0) Then
+    For y = 0 To 3
+      For x = 0 To 3
+        temp[x+y*4] = input[(3 - x) * 4 + y]
+      EndFor
+    EndFor
+    BytesToDecimal(temp,result)
+    If(CODES[result]<>0) Then
+      code = CODES[result]
+    EndIf
+  EndIf
+  
+  If(code=0) Then
+    For y = 0 To 3
+      For x = 0 To 3
+        temp[x+y*4] = input[(3 - y) * 4 + (3 - x)]
+      EndFor
+    EndFor
+    BytesToDecimal(temp,result)
+    If(CODES[result]<>0) Then
+      code = CODES[result]
+    EndIf
+  EndIf
+EndFunction
+
+Function CalculateLineVariance(out number degres)
+  left = Sensor.ReadPercent(2)
+  right = Sensor.ReadPercent(3)
+  degres = (right-left)/1.5
+EndFunction
+
+Sub StartMoveWithLine
+  CalculateLineVariance(degres)
+  Motor.StartSteer(MOVEMENT_MOTORS,MOTOR_SPEED-10,degres)
+EndSub
+
+Sub ArcUco
+  LCD.Clear()
+  Motor.Start(@MOVEMENT_MOTORS,-@MOTOR_SPEED/4)
+  While (Sensor.ReadPercent(2)>@BLACK_COLOR_OFFSET And Sensor.ReadPercent(3)>@BLACK_COLOR_OFFSET)
+    Program.Delay(2)
+  EndWhile
+  Motor.MoveSync(MOVEMENT_MOTORS,-9,-9,20,True)
+  Motor.ResetCount(MOVEMENT_MOTORS)
+  For i=1 To 4
+    Motor.MoveSync(MOVEMENT_MOTORS,-9,-9,43.1,True)
+    Program.Delay(500)
+    For port=1 To 4
+      value = Sensor.ReadPercent(port)
+      If (value>20) Then
+        ArcUco[((4-i)*4)+(4-port)]=1
+        LCD.Write(port*10,i*10, "1")
+      Else
+        ArcUco[((4-i)*4)+(4-port)]=0
+        LCD.Write(port*10,i*10, "0")
+      EndIf
+    EndFor
+  EndFor
+  
+  TryGetNumber(ArcUco,result)
+  ArcUcoCode = result
+  LCD.Write(10,60,ArcUcoCode)
+  ReadCode(ArcUcoCode)
+  
+  Motor.MoveSync(MOVEMENT_MOTORS,-9,-9,43.1,True)
+  While (Sensor.ReadPercent(4)<15)
+    Motor.Move(MOVEMENT_MOTORS, -10, 20, True)
+  EndWhile
+  While (Sensor.ReadPercent(2)>14)
+    Motor.StartSteer(MOVEMENT_MOTORS, MOTOR_SPEED/2, -100)
+  EndWhile
+  LCD.Clear()
+EndSub
+
+Function ReadCode(in number code)
+  codes[0] = Math.Floor(code/100)
+  codes[1] = Math.Remainder(Math.Floor(code/10),10)
+  codes[2] = Math.Remainder(code,10)
+  
+  If(codes[0]<>0) Then
+    For i=0 To 2
+      If codes[i] = 1 Then
+        Speaker.Play(100,"arstdyu/One")
+      ElseIf codes[i]=2 Then
+        Speaker.Play( 100,"arstdyu/Two")
+      ElseIf codes[i]=3 Then
+        Speaker.Play(100,"arstdyu/Three")
+      ElseIf codes[i]=4 Then
+        Speaker.Play(100,"arstdyu/Four")
+      EndIf
+      Speaker.Wait()
+      Program.Delay(250)
+    EndFor
+  Else
+    Speaker.Play(100,"arstdyu/Uh-oh")
+    Speaker.Wait()
+  EndIf
+EndFunction
+
+Function PlayColorSounds(in number color)
+  If color = 2 Then
+    Speaker.Play(100,"arstdyu/Blue")
+  ElseIf color=3 Then
+    Speaker.Play(100,"arstdyu/Green")
+  ElseIf color=4 Then
+    Speaker.Play(100,"arstdyu/Yellow")
+  ElseIf color=5 Then
+    Speaker.Play(100,"arstdyu/Red")
+  EndIf
+  Speaker.Wait()
+EndFunction
+
+Function ConfigureSensors(in number mode)
+  For port=1 To 4
+    Sensor.SetMode(port,mode)
+  EndFor
+EndFunction
+
+# START ____________________________________________________________
+ConfigureSensors(SENSOR_MODE_LIGHT)
+ArcUco()
+#go until maze ------------------------------------------------------------------
+While(Sensor.ReadPercent(4)>20)
+  StartMoveWithLine()
+EndWhile
+Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,60,True)
+Motor.MoveSteer(MOVEMENT_MOTORS,MOTOR_SPEED,-70,210,True)
+
+#maze ---------------------------------------------------------------------------
+
+For i=2 To 4
+  While(Sensor.ReadPercent(1)>20)
+    StartMoveWithLine()
+  EndWhile
+  Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,60,True)
+  Motor.MoveSteer(MOVEMENT_MOTORS,MOTOR_SPEED,70,160,True)
+  
+  Motor.ResetCount(MOVEMENT_MOTORS)
+  While(Motor.GetCount(MOVEMENT_MOTORS)<520)
+    StartMoveWithLine()
+  EndWhile
+  Motor.Stop(MOVEMENT_MOTORS,True)
+  
+  #remember color --------------------------------
+  Motor.Move(FORKLIFT_MOTOR,-100,4.15*360,True)
+  Program.Delay(500)
+  LCD.Clear()
+  
+  code = -1
+  ConfigureSensors(SENSOR_MODE_COLORS)
+  While (code = -1)
+    For port=1 To 3
+      value1 = Sensor.ReadRawValue(port,0)
+      value2 = Sensor.ReadRawValue(port+1,0)
+      If(value1=value2 And value1>1 And value1<6) Then
+        code = value1
+      EndIf
+    EndFor
+    Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED/3,5,True)
+  EndWhile
+  ConfigureSensors(SENSOR_MODE_LIGHT)
+  PlayColorSounds(code)
+  CheckedLocations[i] = code
+  BLOCK_SUM=BLOCK_SUM-CheckedLocations[i]
+  LCD.Write(1,i*10+60,CheckedLocations[i])
+  Motor.Move(FORKLIFT_MOTOR,100,4.15*360,True)
+  
+  #go back ---------------------------------------
+  Motor.MoveSync(MOVEMENT_MOTORS,-MOTOR_SPEED,-MOTOR_SPEED,Motor.GetCount(MOVEMENT_MOTORS)-70,True)
+  Motor.MoveSteer(MOVEMENT_MOTORS,MOTOR_SPEED,-100,180,True)
+  Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,40,True)
+  While(Sensor.ReadPercent(2)>20 And Sensor.ReadPercent(1)<20)
+    Motor.StartSteer(MOVEMENT_MOTORS,MOTOR_SPEED/2,-100)
+  EndWhile
+  Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,60,True)
+EndFor
+CheckedLocations[1]=BLOCK_SUM
+LCD.Write(1,1,CheckedLocations[0])
+
+While (Sensor.ReadPercent(1)>20)
+  StartMoveWithLine()
+EndWhile
+Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,30,True)
+Motor.MoveSteer(MOVEMENT_MOTORS,MOTOR_SPEED,70,200,True)
+Motor.ResetCount(MOVEMENT_MOTORS)
+While(Motor.GetCount(MOVEMENT_MOTORS)<800)
+  StartMoveWithLine()
+EndWhile
+Motor.MoveSteer(MOVEMENT_MOTORS,-10, 100, 175, True)
+Motor.Move(MOVEMENT_MOTORS,MOTOR_SPEED,730,True)
+Motor.MoveSteer(MOVEMENT_MOTORS, -10, 100, 170, True)
+Motor.Move(MOVEMENT_MOTORS,10,-35,True)
+
+ConfigureSensors(SENSOR_MODE_COLORS)
+
+Function GoFinish(in number way)
+  Speaker.Play(100, "Robot/Four")
+  ConfigureSensors(@SENSOR_MODE_LIGHT)
+  If way = 1 Then
+    Motor.MoveSteer(@MOVEMENT_MOTORS,@MOTOR_SPEED/3,100,172,@True)
+  Else
+    Motor.MoveSteer(@MOVEMENT_MOTORS,@MOTOR_SPEED/3,-100,172,@True)
+  EndIf
+  Motor.Start(@MOVEMENT_MOTORS, 13)
+  While (Sensor.ReadPercent(4) >= 15)
+    Program.Delay(15)
+  EndWhile
+  Motor.Stop(@MOVEMENT_MOTORS, @True)
+  Motor.Move(@MOVEMENT_MOTORS,@MOTOR_SPEED/3,550,@True)
+  Program.End()
+EndFunction
+
+moveLenght = 1400
+PlayColorSounds(CheckedLocations[Math.Floor(ArcUcoCode/100)])
+Program.Delay(100)
+PlayColorSounds(CheckedLocations[Math.Remainder(Math.Floor(ArcUcoCode/10),10)])
+Motor.ResetCount(MOVEMENT_MOTORS)
+Motor.Start(MOVEMENT_MOTORS,MOTOR_SPEED/2)
+
+N=3
+While(Motor.GetCount(MOVEMENT_MOTORS)<moveLenght)
+  color1 = Sensor.ReadRawValue(N,0)
+  
+  While(((color1<=1) Or (color1>=6)) And Motor.GetCount(MOVEMENT_MOTORS)<moveLenght)
+    Program.Delay(50)
+    color1 =Sensor.ReadRawValue(N,0)
+  EndWhile
+  color1 =Sensor.ReadRawValue(N,0)
+  PlayColorSounds(color1)
+  If color1 = CheckedLocations[Math.Floor(ArcUcoCode/100)] Then
+    GoFinish(1)
+  EndIf
+EndWhile
+Motor.Stop(MOVEMENT_MOTORS,True)
+
+Motor.Start(MOVEMENT_MOTORS,-MOTOR_SPEED/2)
+Motor.ResetCount(MOVEMENT_MOTORS)
+
+While(-Motor.GetCount(MOVEMENT_MOTORS)<moveLenght)
+  color1 = Sensor.ReadRawValue(N,0)
+  
+  While(((color1<=1) Or (color1>=6)) And Motor.GetCount(MOVEMENT_MOTORS)<moveLenght)
+    Program.Delay(50)
+    color1 =Sensor.ReadRawValue(N,0)
+  EndWhile
+  color1 =Sensor.ReadRawValue(N,0)
+  PlayColorSounds(color1)
+  If color1 = CheckedLocations[Math.Floor(ArcUcoCode/100)] Then
+    Motor.Stop(MOVEMENT_MOTORS,True)
+    Motor.Move(MOVEMENT_MOTORS, MOTOR_SPEED, 20, True)
+    GoFinish(1)
+  EndIf
+  If color1 = CheckedLocations[Math.Remainder(Math.Floor(ArcUcoCode/10),10)] Then
+    Motor.Stop(MOVEMENT_MOTORS,True)
+    Motor.Move(MOVEMENT_MOTORS, MOTOR_SPEED, 20, True)
+    GoFinish(1)
+  EndIf
+EndWhile
+Motor.Stop(MOVEMENT_MOTORS,True)
